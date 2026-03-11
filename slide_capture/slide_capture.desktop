@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=NERG Slide Capture
+Comment=Microscope slide image capture
+Exec=/home/pi/slide_capture/run_capture.sh
+Icon=camera
+Terminal=false
+Type=Application
+Categories=Science;
