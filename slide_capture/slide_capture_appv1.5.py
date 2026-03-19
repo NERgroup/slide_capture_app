@@ -88,10 +88,11 @@ class SlideCaptureApp(QMainWindow):
         self.capture_in_progress = False
         self.pending_file_path: Path | None = None
         self.pending_state: CaptureState | None = None
-        self.pending_capture_kind = "replicate"  # calibration | replicate
+        self.pending_capture_kind = "replicate"
         self.pending_capture_coord: tuple[int, int] | None = None
 
         self.session_capture_count = 0
+        self.grid_coords: list[tuple[int, int]] = []
 
         if PI_CAMERA_AVAILABLE:
             try:
@@ -110,8 +111,6 @@ class SlideCaptureApp(QMainWindow):
         self.apply_styles()
         self._connect_signals()
         self._load_defaults()
-
-        self.grid_coords: list[tuple[int, int]] = []
         self.rebuild_grid()
 
         if self.picam2 is not None:
@@ -139,12 +138,6 @@ class SlideCaptureApp(QMainWindow):
         return self.photos_per_slide()
 
     def grid_shape_for_count(self, n: int) -> tuple[int, int]:
-        """
-        Choose rows/cols that:
-        - cover at least n points
-        - roughly match the physical aspect ratio of the capture area
-        - keep the grid as compact as possible
-        """
         if n <= 1:
             return 1, 1
 
@@ -158,10 +151,8 @@ class SlideCaptureApp(QMainWindow):
 
         for rows in range(1, n + 1):
             cols = math.ceil(n / rows)
-
             occupancy_penalty = (rows * cols) - n
             shape_penalty = abs((cols / rows) - aspect)
-
             score = (occupancy_penalty * 10.0) + shape_penalty
 
             if best_score is None or score < best_score:
@@ -170,7 +161,6 @@ class SlideCaptureApp(QMainWindow):
                 best_cols = cols
 
             if rows > math.sqrt(n) * 3:
-                # no need to search absurdly tall grids
                 break
 
         return best_rows, best_cols
@@ -263,7 +253,6 @@ class SlideCaptureApp(QMainWindow):
         right_panel.setSpacing(12)
         right_container.setLayout(right_panel)
 
-        # ---------------- Session setup ----------------
         session_group = QGroupBox("Session setup")
         session_layout = QFormLayout()
         session_layout.setSpacing(10)
@@ -290,20 +279,21 @@ class SlideCaptureApp(QMainWindow):
 
         self.choose_output_root_btn = QPushButton("Change…")
 
-        output_row = QHBoxLayout()
+        output_row_widget = QWidget()
+        output_row = QHBoxLayout(output_row_widget)
+        output_row.setContentsMargins(0, 0, 0, 0)
         output_row.addWidget(self.output_root_label, stretch=1)
         output_row.addWidget(self.choose_output_root_btn)
 
         session_layout.addRow("Date collected", self.collected_date_input)
         session_layout.addRow("Time collected", self.collected_time_input)
         session_layout.addRow("Site", self.site_code_input)
-        session_layout.addRow("Output root", output_row)
+        session_layout.addRow("Output root", output_row_widget)
         session_layout.addRow("System time", self.system_time_label)
         session_layout.addRow("Camera", self.camera_status_label)
 
         right_panel.addWidget(session_group)
 
-        # ---------------- Slide workflow ----------------
         slide_group = QGroupBox("Slide workflow")
         slide_layout = QGridLayout()
         slide_layout.setHorizontalSpacing(10)
@@ -348,7 +338,6 @@ class SlideCaptureApp(QMainWindow):
 
         right_panel.addWidget(slide_group)
 
-        # ---------------- Camera settings ----------------
         camera_group = QGroupBox("Camera settings")
         camera_layout = QFormLayout()
         camera_layout.setSpacing(10)
@@ -376,7 +365,6 @@ class SlideCaptureApp(QMainWindow):
 
         right_panel.addWidget(camera_group)
 
-        # ---------------- Capture workflow ----------------
         capture_group = QGroupBox("Capture workflow")
         capture_layout = QVBoxLayout()
         capture_layout.setSpacing(10)
@@ -621,10 +609,6 @@ class SlideCaptureApp(QMainWindow):
         self.capture_btn.style().polish(self.capture_btn)
         self.capture_btn.update()
 
-    # ----------------------------
-    # Signals / defaults
-    # ----------------------------
-
     def _connect_signals(self) -> None:
         self.choose_output_root_btn.clicked.connect(self.choose_output_root)
         self.capture_calibration_btn.clicked.connect(self.capture_calibration_image)
@@ -662,20 +646,12 @@ class SlideCaptureApp(QMainWindow):
     def update_system_time_label(self) -> None:
         self.system_time_label.setText(datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
 
-    # ----------------------------
-    # Event filter
-    # ----------------------------
-
     def eventFilter(self, obj, event):
         if event.type() == QEvent.KeyPress and event.modifiers() == Qt.NoModifier:
             if event.key() == Qt.Key_C and not self.capture_in_progress:
                 self.capture_replicate_image()
                 return True
         return super().eventFilter(obj, event)
-
-    # ----------------------------
-    # State helpers
-    # ----------------------------
 
     def get_state(self) -> CaptureState:
         return CaptureState(
@@ -760,10 +736,6 @@ class SlideCaptureApp(QMainWindow):
         self.rebuild_grid()
         self.refresh_summary()
 
-    # ----------------------------
-    # UI actions
-    # ----------------------------
-
     def choose_output_root(self) -> None:
         folder = QFileDialog.getExistingDirectory(self, "Choose output folder", str(self.output_root))
         if folder:
@@ -792,10 +764,6 @@ class SlideCaptureApp(QMainWindow):
         self.slide_number_spin.setValue(self.slide_number_spin.value() + 1)
         self.replicate_spin.setValue(1)
         self.statusBar().showMessage(f"Moved to slide {self.slide_number_spin.value()}, replicate 1")
-
-    # ----------------------------
-    # Camera controls
-    # ----------------------------
 
     def apply_camera_controls(self) -> None:
         self.refresh_summary()
@@ -845,10 +813,6 @@ class SlideCaptureApp(QMainWindow):
                 self.statusBar().showMessage("Camera defaults restored")
         except Exception as exc:
             self.statusBar().showMessage(f"Could not reset camera defaults: {exc}")
-
-    # ----------------------------
-    # UI state
-    # ----------------------------
 
     def set_busy_ui(self, busy: bool) -> None:
         metadata_enabled = not busy
@@ -938,10 +902,6 @@ class SlideCaptureApp(QMainWindow):
 
         self.summary_box.setPlainText(text)
         self.update_capture_ui()
-
-    # ----------------------------
-    # Capture workflow
-    # ----------------------------
 
     def begin_capture(
         self,
@@ -1115,10 +1075,6 @@ class SlideCaptureApp(QMainWindow):
 
         self.statusBar().showMessage("Site complete. Ready to start next site.")
 
-    # ----------------------------
-    # Logging
-    # ----------------------------
-
     def write_calibration_log(self, path: Path, state: CaptureState) -> None:
         log_file = path.parent / "calibration_log.csv"
         exists = log_file.exists()
@@ -1171,10 +1127,6 @@ class SlideCaptureApp(QMainWindow):
                 path.name,
                 str(path),
             ])
-
-    # ----------------------------
-    # Close
-    # ----------------------------
 
     def closeEvent(self, event) -> None:
         try:
